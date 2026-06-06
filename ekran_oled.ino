@@ -1,26 +1,33 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_SH1106.h>
-//definiujemy piny I2C, do których podłączony został wyświetlacz
-#define OLED_SDA 21
-#define OLED_SCL 22
+#include <Adafruit_SSD1306.h> // Zmiana biblioteki
 
-Adafruit_SH1106 display(21, 22);
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
 
-void setup()   {
+// Inicjalizacja dla SSD1306
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+void setup() {
   Serial.begin(115200);
-  //definiujemy rodzaj użytego wyświetlacza oraz adres I2C
-  display.begin(SH1106_SWITCHCAPVCC, 0x3C);
+  
+  // ESP32 wymaga zdefiniowania pinów I2C przed display.begin
+  Wire.begin(21, 22); 
+
+  // Adres 0x3C, flaga SSD1306_SWITCHCAPVCC działa tak samo
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { 
+    Serial.println(F("Nie znaleziono ekranu SSD1306"));
+    for(;;);
+  }
+  
   display.clearDisplay();
-  display.display();
-  //ustawiamy rozmiar czcionki, kolor, położenie kursora oraz wyświetlany tekst
-  display.setTextColor(WHITE);
+  display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
+  display.setTextSize(1);
   display.println("Hello World!");
   display.display();
 }
 
 void loop() {
-
 }
