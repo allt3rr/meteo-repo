@@ -63,9 +63,10 @@ DallasTemperature sensors(&oneWire);
 
 unsigned long prevTime = 0;
 const long refreshInterval = 2000;
-char temp[1200];
+char temp[2400];
 
 const int led = 13;
+int curr_screen = 0;
 
 void handleRoot() {
   digitalWrite(led, 1);
@@ -74,10 +75,14 @@ void handleRoot() {
   float outdoorTemp = sensors.getTempCByIndex(0);
   float indoorTemp = bme.readTemperature();
   float hum = bme.readHumidity();
-  float pres = bme.readPressure() / 100.0F;
+
+  float raw_pres = bme.readPressure() / 100.0F; 
+  float wysokosc_npm = 316.0; 
+  float pres = raw_pres * pow((1.0 - ((0.0065 * wysokosc_npm) / (indoorTemp + (0.0065 * wysokosc_npm) + 273.15))), -5.255);
+
 
   snprintf(
-    temp, 1200,
+    temp, 2400,
 
     "<html>\
   <head>\
@@ -137,8 +142,8 @@ void setup() {
   while (!Serial);
 
   WiFi.mode(WIFI_STA);
-  wifiMulti.addAP("ssid", "passwrd");
-  wifiMulti.addAP("ssid", "passwrd");
+  wifiMulti.addAP("TPLINK", "zxc444ZXC");
+  wifiMulti.addAP("łajfi", "oviw7928");
   Serial.println("WiFi Connecting...");
 
   // Wait for connection
@@ -188,85 +193,197 @@ void setup() {
 }
 
 void loop() {
-  if(wifiMulti.run() == WL_CONNECTED){
-    server.handleClient();
-
-    unsigned long currentTime = millis();
-
-    if (currentTime - prevTime >= refreshInterval) {
-      prevTime = currentTime;
-      showMeteo();
-    }
-
-    if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
-      
-      MFRC522Debug::PICC_DumpToSerial(mfrc522, Serial, &(mfrc522.uid));
-
-      display.clearDisplay();
-      display.setTextSize(1);
-      display.setCursor(0, 0);
-      display.println("WYKRYTO AUTORYZACJE");
-      display.drawFastHLine(0, 12, 128, WHITE);
-
-      display.setCursor(0, 25);
-      display.print("UID: ");
-      for (byte i = 0; i < mfrc522.uid.size; i++) {
-        if (mfrc522.uid.uidByte[i] < 0x10) display.print("0");
-        display.print(mfrc522.uid.uidByte[i], HEX);
-        display.print(" ");
-      }
-      display.display();
-
-      delay(3000); 
-      
-      prevTime = millis(); 
-    }
-  }else{
-    Serial.print("Brak połączenia z żadną z sieci!");
+  if (wifiMulti.run() != WL_CONNECTED) {
+    Serial.println("Reconnecting Wi-Fi...");
+    delay(500);
+    return; 
   }
 
-  delay(1000);  
+  server.handleClient();
+
+  unsigned long currentTime = millis();
+  if (currentTime - prevTime >= refreshInterval) {
+    prevTime = currentTime;
+    switch (curr_screen) {
+      case 0:
+        showMeteo();
+        break;
+      
+      case 1:
+        showTemperatures();
+        break;
+      
+      case 2:
+        showHumidityPressure();
+        break;
+      
+      case 3:
+        showAdminData();
+        break;
+
+      case 4:
+        saveBattery();
+        break;
+        
+      default:
+        showMeteo();
+        curr_screen = 0;
+        break;
+    }
+  }
+
+  if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
+    // MFRC522Debug::PICC_DumpToSerial(mfrc522, Serial, &(mfrc522.uid));
+
+    String cardUID = "";
+    for (byte i = 0; i < mfrc522.uid.size; i++) {
+      if(mfrc522.uid.uidByte[i] < 0x10) cardUID += "0";
+      cardUID += String(mfrc522.uid.uidByte[i], HEX);
+    }
+    cardUID.toUpperCase();
+    cardUID.trim();
+
+    if(cardUID == "71CBB5C0"){
+      display.ssd1306_command(SSD1306_DISPLAYON);
+      curr_screen = 1;
+      showTemperatures();
+    }else if (cardUID == "61AF6FC1"){
+      display.ssd1306_command(SSD1306_DISPLAYON);
+      curr_screen = 2;
+      showHumidityPressure();
+    }else if (cardUID == "0149BFBE" || cardUID == "149BFBE"){
+      display.ssd1306_command(SSD1306_DISPLAYON);
+      curr_screen = 3;
+      showAdminData();
+    }else if (cardUID == "41C03107"){
+      curr_screen = 4;
+      saveBattery();
+    }else {
+      display.clearDisplay();
+      display.setCursor(0, 18);
+      display.println("NIEZNANA KARTA!");
+      display.println(cardUID);
+      display.display();
+    }
+
+    delay(3000);
+    prevTime = millis();
+  }
+
+  delay(10);
 }
 
 void showMeteo() {
-  sensors.requestTemperatures();
-  float outdoorTemp =  sensors.getTempCByIndex(0);
-  float temp = bme.readTemperature();
-  float hum = bme.readHumidity();
-  float pres = bme.readPressure() / 100.0F;
-
   display.clearDisplay();
-  
-  // Nagłówek interfejsu
+
   display.setTextSize(1);
   display.setCursor(0, 0);
   display.println("STACJA METEO");
   display.drawFastHLine(0, 10, 128, WHITE);
 
-  // Odczyt Temperatury
-  display.setCursor(0, 14);
+  display.setTextSize(1);
+  display.setCursor(0, 18);
+  display.println("Przyloz karte!");
+
+  display.display();
+}
+
+void showTemperatures(){
+  sensors.requestTemperatures();
+  float outdoorTemp =  sensors.getTempCByIndex(0);
+  float temp = bme.readTemperature();
+
+  display.clearDisplay();
+
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.println("TEMPERATURA");
+  display.drawFastHLine(0, 10, 128, WHITE);
+
+  display.setCursor(0, 18);
   display.print("Temp Wew.:     ");
   display.print(temp, 1);
-  display.write(167); // Znak stopnia °
+  display.write(167);
   display.println("C");
 
-  display.setCursor(0, 22);
+  display.setCursor(0, 32);
   display.print("Temp Zew.:     ");
   display.print(outdoorTemp, 1);
-  display.write(167); // Znak stopnia °
+  display.write(167);
   display.println("C");
 
-  // Odczyt Wilgotności
-  display.setCursor(0, 32);
+  display.display();
+}
+
+void showHumidityPressure(){
+  sensors.requestTemperatures();
+  float hum = bme.readHumidity();
+
+  float temp = bme.readTemperature();
+  float raw_pres = bme.readPressure() / 100.0F; 
+  float wysokosc_npm = 316.0; 
+  float pres = raw_pres * pow((1.0 - ((0.0065 * wysokosc_npm) / (temp + (0.0065 * wysokosc_npm) + 273.15))), -5.255);
+
+  display.clearDisplay();
+
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.println("WILGOC I CISNIENIE");
+  display.drawFastHLine(0, 10, 128, WHITE);
+
+  display.setCursor(0, 18);
   display.print("Wilgoc:   ");
   display.print(hum, 0);
   display.println(" %");
 
-  // Odczyt Ciśnienia
-  display.setCursor(0, 46);
+  display.setCursor(0, 32);
   display.print("Cisn:     ");
   display.print(pres, 0);
   display.println(" hPa");
 
   display.display();
+}
+
+void showAdminData(){
+  int WiFiQuality = getWiFiQuality();
+
+  display.clearDisplay();
+
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.println("ADMIN INFO");
+  display.drawFastHLine(0, 10, 128, WHITE);
+
+  display.setCursor(0, 18);
+  display.print("SSID:   ");
+  display.print(WiFi.SSID());
+
+  display.setCursor(0, 28);
+  display.print("IP:   ");
+  display.print(WiFi.localIP());
+
+  display.setCursor(0, 40);
+  display.print("Sygnal:   ");
+  display.print(WiFi.RSSI());
+  display.print("dBm");
+  display.setCursor(0, 50);
+  display.print("Jakosc:   ");
+  display.print(WiFiQuality);
+
+  display.display();
+}
+
+void saveBattery(){
+  display.clearDisplay();
+  display.display();
+  display.ssd1306_command(SSD1306_DISPLAYOFF);
+}
+
+int getWiFiQuality() {
+  long rssi = WiFi.RSSI();
+  
+  if (rssi <= -100) return 0;
+  if (rssi >= -50)  return 100;
+  
+  return map(rssi, -100, -50, 0, 100);
 }
